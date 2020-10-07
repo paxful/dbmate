@@ -5,12 +5,19 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/lib/pq"
 )
 
+var migrationsTable string
+
 func init() {
+	migrationsTable = os.Getenv("DBMATE_MIGRATIONS_TABLE")
+	if migrationsTable == "" {
+		migrationsTable = "public.schema_migrations"
+	}
 	RegisterDriver(PostgresDriver{}, "postgres")
 	RegisterDriver(PostgresDriver{}, "postgresql")
 }
@@ -107,7 +114,7 @@ func (drv PostgresDriver) DropDatabase(u *url.URL) error {
 func postgresSchemaMigrationsDump(db *sql.DB) ([]byte, error) {
 	// load applied migrations
 	migrations, err := queryColumn(db,
-		"select quote_literal(version) from public.schema_migrations order by version asc")
+		"select quote_literal(version) from "+migrationsTable+" order by version asc")
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +124,7 @@ func postgresSchemaMigrationsDump(db *sql.DB) ([]byte, error) {
 	buf.WriteString("\n--\n-- Dbmate schema migrations\n--\n\n")
 
 	if len(migrations) > 0 {
-		buf.WriteString("INSERT INTO public.schema_migrations (version) VALUES\n    (" +
+		buf.WriteString("INSERT INTO " + migrationsTable + " (version) VALUES\n    (" +
 			strings.Join(migrations, "),\n    (") +
 			");\n")
 	}
@@ -165,7 +172,7 @@ func (drv PostgresDriver) DatabaseExists(u *url.URL) (bool, error) {
 
 // CreateMigrationsTable creates the schema_migrations table
 func (drv PostgresDriver) CreateMigrationsTable(db *sql.DB) error {
-	_, err := db.Exec("create table if not exists public.schema_migrations " +
+	_, err := db.Exec("create table if not exists " + migrationsTable + " " +
 		"(version varchar(255) primary key)")
 
 	return err
@@ -174,7 +181,7 @@ func (drv PostgresDriver) CreateMigrationsTable(db *sql.DB) error {
 // SelectMigrations returns a list of applied migrations
 // with an optional limit (in descending order)
 func (drv PostgresDriver) SelectMigrations(db *sql.DB, limit int) (map[string]bool, error) {
-	query := "select version from public.schema_migrations order by version desc"
+	query := "select version from " + migrationsTable + " order by version desc"
 	if limit >= 0 {
 		query = fmt.Sprintf("%s limit %d", query, limit)
 	}
@@ -200,14 +207,14 @@ func (drv PostgresDriver) SelectMigrations(db *sql.DB, limit int) (map[string]bo
 
 // InsertMigration adds a new migration record
 func (drv PostgresDriver) InsertMigration(db Transaction, version string) error {
-	_, err := db.Exec("insert into public.schema_migrations (version) values ($1)", version)
+	_, err := db.Exec("insert into "+migrationsTable+" (version) values ($1)", version)
 
 	return err
 }
 
 // DeleteMigration removes a migration record
 func (drv PostgresDriver) DeleteMigration(db Transaction, version string) error {
-	_, err := db.Exec("delete from public.schema_migrations where version = $1", version)
+	_, err := db.Exec("delete from "+migrationsTable+" where version = $1", version)
 
 	return err
 }
